@@ -1,3 +1,15 @@
+/**************************************************************
+* Class: CSC-415
+* Name: 
+* Student ID: 
+* Project: 
+*
+* File: bitMap.h
+*
+* Description: 
+*
+**************************************************************/
+
 #ifndef BITMAP_H
 #define BITMAP_H
 
