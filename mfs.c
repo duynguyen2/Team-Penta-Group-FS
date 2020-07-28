@@ -25,13 +25,11 @@ int startup = 0;
 //Stack ALlocated Array and Counter
 char write_Buffer[BUFSIZE];
 int counter_Write = 0;
+
 int b_open(char *filename, int flags)
 {
     int fd;
     int returnFd;
-
-    //*** TODO ***:  Modify to save or set any information needed
-    //Added File Permission to Read&Write
 
     fcbArray[returnFd].writeBuf = malloc(BUFSIZE);
     if (startup == 0)
@@ -61,6 +59,16 @@ int b_open(char *filename, int flags)
         fcbArray[returnFd].linuxFd = -1; //Free FCB
         return -1;
     }
+	
+    fcbArray[returnFd].writeBuf = malloc(BUFSIZE);
+
+    if (fcbArray[returnFd].writeBuf == NULL)
+    {
+        // very bad, we can not allocate our buffer
+        close(fd);                       // close linux file
+        fcbArray[returnFd].linuxFd = -1; //Free FCB
+        return -1;
+    }
 
     fcbArray[returnFd].buflen = 0; // have not read anything yet
     fcbArray[returnFd].index = 0;  // have not read anything yet
@@ -71,9 +79,6 @@ int b_open(char *filename, int flags)
 {
     int fd;
     int returnFd;
-
-    //*** TODO ***:  Modify to save or set any information needed
-    //Added File Permission to Read&Write
 
     fcbArray[returnFd].writeBuf = malloc(BUFSIZE);
     if (startup == 0)
@@ -126,10 +131,6 @@ int b_write(int fd, char *buffer, int count)
         return -1;
     }
 
-    //*** TODO ***:  Write buffered write function to accept the data and # bytes provided
-    //               You must use the Linux System Calls and you must buffer the data
-    //				 in 512 byte chunks and only write in 512 byte blocks
-
     if (counter_Write + count > BUFSIZE)
     {
         int left_Write = BUFSIZE - counter_Write;                 //bytes left to write until 512
@@ -142,6 +143,7 @@ int b_write(int fd, char *buffer, int count)
         //memcpy(fcbArray[fd].ruf + counter_Write, buffer + ko, count_remaining); // Copy from Buffer up to last copy remaining left
         counter_Write = right_Write; //Set the counter at the last placed stopped
     }
+	
     else
     {
         memcpy(write_Buffer + counter_Write, buffer, count);
@@ -151,9 +153,9 @@ int b_write(int fd, char *buffer, int count)
 
     //Every time B_write is called,  load the writing, check buffer Holder > 512 , if its not just store & let go.
     //If buffer holder > 512 , write to the text file, take the rest of the buffer put it in the storage from beginning
-    //*** TODO ***:  DONE
     return 1;
 }
+
 void b_close(int fd)
 {
     write(fcbArray[fd].linuxFd, write_Buffer, counter_Write); //Write Last Few Bytes in File

@@ -101,7 +101,7 @@ int main (int argc, char *argv[]) {
   free(vcbBuf2);
   free(vcb);
 
-  /*
+  
   char * buf = malloc(blockSize *2);
   char * buf2 = malloc(blockSize *2);
   memset (buf, 0, blockSize*2);
@@ -119,7 +119,7 @@ int main (int argc, char *argv[]) {
 
   free (buf);
   free(buf2);
-  */
+  
 
   closePartitionSystem();
   return 0;
