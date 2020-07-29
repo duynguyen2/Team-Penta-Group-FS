@@ -1,16 +1,8 @@
-#include <stdio.h>
-#include <limits.h>    /* for CHAR_BIT */
-#include <stdint.h>   /* for uint32_t */
 #include "bitMap.h"
 
 //https://stackoverflow.com/questions/40701950/free-space-bitmap-c-implementation
 
-int memBlockSize;
-int memBlockCount;
-uint *bitMap;
-char *buffer;
-
-void initMemMap(int blockSize, int blockCount)
+void initMemMap(int blockSize, int blockCount) //initialize the bitmap, blocks and buffer
 {
     memBlockSize = blockSize;
     memBlockCount = blockCount;
@@ -18,7 +10,7 @@ void initMemMap(int blockSize, int blockCount)
     bitMap = (uint*)calloc((blockCount / 32) + ((blockCount % 32) != 0), 4);
 }
 
-int isAllocated(int index)
+int isAllocated(int index) //return if it the block is occupied(=1)
 {
     return (bitMap[index / 32] && (1 << (index % 32))) != 0;
 }
@@ -38,7 +30,7 @@ char* allocateBlock(int blockCount)
     int index = 0, freeFrames = 0;
     while(index < memBlockCount)
     {
-        if (!is_allocated(index))
+        if (!isAllocated(index))
         {
             freeFrames++;
             if (freeFrames == blockCount)
