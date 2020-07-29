@@ -1,127 +1,169 @@
 /**************************************************************
 * Class:  CSC-415
-* Name: Professor Bierman
+* Name: Taylor Artunian
+* Team: Team Penta
 * Student ID: N/A
 * Project: Basic File System
 *
-* File: fsLowDriver.c
+* File: fsMakeVol.c
 *
-* Description: This is a demo to show how to use the fsLow
-* 	routines.
+* Description: This program is used to create a volume for the
+*              Penta File System.
 *
 **************************************************************/
 
+#include "fsMakeVol.h"
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <pthread.h>
-#include <errno.h>
-#include <math.h>
-#include <time.h>
-#include "fsLow.h"
-#include "mfs.h"
+int ceilDiv(int a, int b) {
+  /* Rounds up integer division. */
+  return (a + b - 1) / b;
+}
 
-struct mfs_VCB {
-  char header[16];
-  uint32_t DISK_SIZE_BYTES;
-  uint32_t BLOCK_SIZE_BYTES;
-  uint32_t DISK_SIZE_BLOCKS;
-  uint32_t freeBlockMap[];
-};
+void initializeVCB(uint64_t volumeSize, uint64_t blockSize) {
+  printf("------------------------Initializing VCB-------------------------\n");
 
-int main (int argc, char *argv[]) {
-  char * filename;
-  uint64_t volumeSize;
-  uint64_t blockSize;
-  int retVal;
+  /* Compute size of disk in blocks. */
+  int diskSizeBlocks = ceilDiv(volumeSize, blockSize);
+  
+  /* Compute the number of blocks needed to hold the VCB. */
+  int totalVCBBlocks = ceilDiv(sizeof(mfs_VCB), blockSize);
 
-  if (argc > 3)
-  {
-    filename = argv[1];
-    volumeSize = atoll (argv[2]);
-    blockSize = atoll (argv[3]);
-  } else {
-    printf ("Usage: fsMakeVol volumeFileName volumeSize blockSize\n");
-    return -1;
+  mfs_VCB* vcb_p = calloc(totalVCBBlocks, blockSize);
+  sprintf(vcb_p->header, "*****PentaFS****");
+  for(int i=0; i<4; i++) {
+    vcb_p->freeBlockMap[i] = 4294967295;	//uint32_t with all 32 bits hi
   }
 
-  retVal = startPartitionSystem (filename, &volumeSize, &blockSize);	
-  printf("Opened %s, Volume Size: %llu;  BlockSize: %llu; Return %d\n", filename, (ull_t)volumeSize, (ull_t)blockSize, retVal);
+  /* Initialize properties of the root directory entry. */
+  vcb_p->diskSizeBlocks = diskSizeBlocks;
+  vcb_p->rootDir.d_ino = 1;
+  vcb_p->rootDir.d_off = 1;
+  vcb_p->rootDir.d_reclen = 16;
+  vcb_p->rootDir.d_type = '1';
+  sprintf(vcb_p->rootDir.d_name, "root");
+  printVCB(vcb_p);
 
-  int diskSizeBlocks = volumeSize/blockSize;
-  int freeMapIntCount = diskSizeBlocks<sizeof(int)?sizeof(int):ceil(diskSizeBlocks/sizeof(int));
-  int vcbSize = sizeof(struct mfs_VCB)+sizeof(int[freeMapIntCount]);
-  struct mfs_VCB* vcb = malloc(vcbSize);
-  printf("freeMapIntCount=%d\n", freeMapIntCount);
-  printf("vcbSize=%d, sizeof(*vcb)=%ld\n", vcbSize, sizeof(*vcb));
-  sprintf(vcb->header, "PentaFS VCB");
-  vcb->DISK_SIZE_BYTES = volumeSize;
-  vcb->BLOCK_SIZE_BYTES = blockSize;
-  vcb->DISK_SIZE_BLOCKS = diskSizeBlocks;
-  vcb->freeBlockMap[0] = 1111;
-  vcb->freeBlockMap[1] = 2222;
-  vcb->freeBlockMap[2] = 3333;
+  /* Write the VCB to disk. */
+  char* char_p = (char*) vcb_p;
+  LBAwrite(char_p, totalVCBBlocks, VCB_START_BLOCK);
+  printf("Wrote VCB of size %ld in %d blocks starting at block %d.\n", sizeof(mfs_VCB), totalVCBBlocks, VCB_START_BLOCK);
+  free(vcb_p);
+}
 
-  printf("[VCB|DISK_SIZE_BYTES=%d BLOCK_SIZE_BYTES=%d DISK_SIZE_BLOCKS=%d]\n", vcb->DISK_SIZE_BYTES, vcb->BLOCK_SIZE_BYTES, vcb->DISK_SIZE_BLOCKS);
-  for(int i=0; i<freeMapIntCount; i++) {
-    printf("\t freeBlockMap[%d]: %d\n", i, vcb->freeBlockMap[i]);
+void initializeInodes(uint64_t volumeSize, uint64_t blockSize) {
+  printf("-----------------------Initializing inodes-----------------------\n");
+
+  /* Compute size of disk in blocks. */
+  int diskSizeBlocks = ceilDiv(volumeSize, blockSize);
+
+  /* Calculate number of inodes for entire system based on BLOCKS_PER_INODE. */
+  int totalInodes = ceilDiv(diskSizeBlocks,BLOCKS_PER_INODE);
+
+  /* Calculate number of blocks required to hold all inodes. */
+  int totalInodeBlocks = ceilDiv(totalInodes*sizeof(mfs_DIR), blockSize);
+  printf("Total disk blocks: %d, total inodes: %d, total inode blocks: %d\n", diskSizeBlocks, totalInodes, totalInodeBlocks);
+
+  /* Allocate and initialize inodes. First inode is root directory and has id=1. */
+  mfs_DIR* inodes = calloc(totalInodeBlocks, blockSize);
+  inodes[0].id = 1;
+  inodes[0].type = 1;
+  inodes[0].parent = 0;
+  sprintf(inodes[0].name, "root_inode");
+  inodes[0].numDirectBlockPointers = 0;
+  for(int i = 1; i<totalInodes; i++) {
+    inodes[i].id = 0;
+    inodes[i].type = 0;
+    inodes[i].parent = 0;
+    sprintf(inodes[i].name, "unused_inode");
+    inodes[i].numDirectBlockPointers = 0;
   }
-  printf("[VCB|Size=%ld bytes]\n", sizeof(*vcb));
 
-  char* vcbBuf = calloc(blockSize, sizeof(char));
-  memcpy(vcbBuf, vcb, vcbSize);
-//  sprintf(vcbBuf, "ABCDEFGHIJKLMNOP");
+  /* Write inodes to disk. */
+  char* char_p = (char*) inodes;
+  LBAwrite(char_p, totalInodeBlocks, INODE_START_BLOCK);
+  printf("Wrote %d inodes of size %ld bytes each starting at block %d.\n", totalInodes, sizeof(mfs_DIR), INODE_START_BLOCK);
+  free(inodes);
+}
 
-  uint64_t w = LBAwrite(vcbBuf, 1, 0);
-  printf("[VCB|VCB written in %ld blocks]\n", w);
-
-  char* vcbBuf2 = calloc(blockSize, sizeof(char));
-  uint64_t r = LBAread(vcbBuf2, 1, 0);
-  printf("[VCB|VCB read back in %ld blocks]\n", r);
-
-  int c = memcmp(vcbBuf, vcbBuf2, blockSize);
-  printf("[VCB|VCB comparison = %d, %s]\n", c, c==0?"Success":"Error");
-
-  if(!c) {
-    struct mfs_VCB* vcb2 = (struct mfs_VCB*)vcbBuf2;
-    printf("[VCB2|DISK_SIZE_BYTES=%d BLOCK_SIZE_BYTES=%d DISK_SIZE_BLOCKS=%d]\n", vcb2->DISK_SIZE_BYTES, vcb2->BLOCK_SIZE_BYTES, vcb2->DISK_SIZE_BLOCKS);
-    for(int i=0; i<freeMapIntCount; i++) {
-      printf("\t freeBlockMap[%d]: %d\n", i, vcb2->freeBlockMap[i]);
+void printVCB(mfs_VCB* vcb_p) {
+  int size = sizeof(*vcb_p);
+  int width = 16;
+  char* char_p = (char*)vcb_p;
+  char ascii[width+1];
+  sprintf(ascii, "%s", "................");
+  printf("--------------------------Printing VCB---------------------------\n");
+  for(int i = 0; i<size; i++) {
+    printf("%02x ", char_p[i] & 0xff);
+    if(char_p[i]) {
+      ascii[i%width] = char_p[i];
     }
-    printf("[VCB2|Size=%ld bytes]\n", sizeof(*vcb2));
-    free(vcb2);
+    if((i+1)%width==0&&i>0) {
+      ascii[i%width+1] = '\0';
+      printf("%s\n", ascii);
+      sprintf(ascii, "%s", "................");
+    } else if (i==size-1) {
+      for(int j=0; j<width-(i%(width-1)); j++) {
+        printf("   ");
+      }
+      ascii[i%width+1] = '\0';
+      printf("%s\n", ascii);
+      sprintf(ascii, "%s", "................");
+    }
+  }
+  printf("VCB Size: %d bytes\n", size);
+  printf("Size of mfs_dirent: %ld bytes\n", sizeof(struct mfs_dirent));
+}
+
+int createVolume(char* fileName, uint64_t volumeSize, uint64_t blockSize) {
+
+  /* Check whether volume exists already. */
+  if(access(fileName, F_OK) != -1) {
+    printf("Cannot create volume '%s'. Volume already exists.\n", fileName);
+    return -3;
   }
 
-  free(vcbBuf);
-  free(vcbBuf2);
-  free(vcb);
+  uint64_t existingVolumeSize = volumeSize;
+  uint64_t existingBlockSize = blockSize;
 
-  /*
-  char * buf = malloc(blockSize *2);
-  char * buf2 = malloc(blockSize *2);
-  memset (buf, 0, blockSize*2);
-  strcpy (buf, "Now is the time for all good people to come to the aid of their countrymen\n");
-  strcpy (&buf[blockSize+10], "Four score and seven years ago our fathers brought forth onto this continent a new nation\n");
-  LBAwrite (buf, 2, 0);
-  LBAwrite (buf, 2, 3);
-  LBAread (buf2, 2, 0);
-  if (memcmp(buf, buf2, blockSize*2)==0)
-  {
-    printf("Read/Write worked\n");
-  } else {
-    printf("FAILURE on Write/Read\n");
+  /* Initialize the volume with the fsLow library. */
+  int retVal = startPartitionSystem (fileName, &existingVolumeSize, &existingBlockSize);
+
+  printf("Opened %s, Volume Size: %llu;  BlockSize: %llu; Return %d\n", fileName, (ull_t)volumeSize, (ull_t)blockSize, retVal);
+
+  switch(retVal) {
+
+    /* startPartitionSystem had no errors creating the volume.
+     * Now compute the number of uint32_t required to serve as
+     * the freeBlockMap and store in the mfs_VCB struct. Then
+     * write the mfs_VCB struct to block 0 of the disk.
+     */
+    case 0: {
+      initializeVCB(volumeSize, blockSize);
+      break;
+    }
+
+    /* startPartitionSystem could not write to the volume. */
+    case -1: {
+      printf("File '%s' exists but cannot open for write.\n", fileName);
+      return -1;
+    }
+
+    /* startPartitionSystem did not have enough space to
+     * create the volume.
+     */
+    case -2: {
+      printf("Insufficient space for the volume '%s'.\n", fileName);
+      return -2;
+    }
   }
 
-  free (buf);
-  free(buf2);
-  */
+  initializeInodes(volumeSize, blockSize);
 
   closePartitionSystem();
   return 0;
+
 }
+
+
+
 
