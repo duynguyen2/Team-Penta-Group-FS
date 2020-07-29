@@ -31,7 +31,6 @@ void b_close (int fd);
 
 #endif
 
-
 struct mfs_dirent
 {
     ino_t          d_ino;       /* inode number  - not used by driver*/
@@ -42,11 +41,18 @@ struct mfs_dirent
     char           d_name[256]; /* filename */
 };
 
-/*****TO DO:  Fill in this structure with what your open/read directory needs  *****/
+/* This is the equivalent to an inode in the Unix file system. */
 
 typedef struct
 {
-	int dummy;
+	int id;
+	int type;
+	int parent;
+	int children[64];
+	int numChildren;
+	char name[256];
+	int directBlockPointers[64];
+	int numDirectBlockPointers;	
 } mfs_DIR;
 
 int mfs_mkdir(const char *pathname, mode_t mode);
